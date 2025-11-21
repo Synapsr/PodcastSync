@@ -53,6 +53,11 @@
         "depends": []
       },
       "externalBin": [],
+      "icon": [
+        "icons/icon.icns",
+        "icons/icon.ico",
+        "icons/icon.png"
+      ],
       "identifier": "com.podcastsync.app",
       "longDescription": "A modern, cross-platform desktop application for automatically downloading and managing podcast episodes from RSS feeds. Perfect for podcast archival, community radio stations, and broadcast automation.",
       "macOS": {
