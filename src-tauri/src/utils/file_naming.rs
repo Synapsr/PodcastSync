@@ -20,24 +20,48 @@ pub fn sanitize_filename(name: &str) -> String {
     sanitized.chars().take(200).collect()
 }
 
-/// Build output path for an episode
-pub fn build_output_path(
+/// Apply filename format with variables: {show}, {episode}, {date}
+pub fn apply_filename_format(
+    format: &str,
+    subscription_name: &str,
+    episode_title: &str,
+    pub_date: Option<DateTime<Utc>>,
+) -> String {
+    let sanitized_show = sanitize_filename(subscription_name);
+    let sanitized_episode = sanitize_filename(episode_title);
+    let date_str = pub_date
+        .map(|d| d.format("%Y-%m-%d").to_string())
+        .unwrap_or_else(|| "unknown-date".to_string());
+
+    format
+        .replace("{show}", &sanitized_show)
+        .replace("{episode}", &sanitized_episode)
+        .replace("{date}", &date_str)
+}
+
+/// Build output path for an episode with custom filename format
+/// Format can use: {show}, {episode}, {date}
+/// Examples: "{show}-{episode}", "{episode}", "{date}_{episode}", etc.
+pub fn build_output_path_with_format(
     base_directory: &str,
     subscription_name: &str,
     episode_title: &str,
     pub_date: Option<DateTime<Utc>>,
     audio_url: &str,
+    filename_format: &str,
 ) -> PathBuf {
     let sanitized_sub_name = sanitize_filename(subscription_name);
-    let sanitized_title = sanitize_filename(episode_title);
 
-    // Format: {base_dir}/{subscription_name}/{YYYY-MM-DD}_{title}.{ext}
-    let date_prefix = pub_date
-        .map(|d| d.format("%Y-%m-%d").to_string())
-        .unwrap_or_else(|| "unknown-date".to_string());
+    // Apply custom format
+    let filename_base = apply_filename_format(
+        filename_format,
+        subscription_name,
+        episode_title,
+        pub_date,
+    );
 
     let extension = extract_extension(audio_url).unwrap_or("mp3".to_string());
-    let filename = format!("{}_{}.{}", date_prefix, sanitized_title, extension);
+    let filename = format!("{}.{}", filename_base, extension);
 
     let mut path = PathBuf::from(base_directory);
     path.push(&sanitized_sub_name);
@@ -49,6 +73,25 @@ pub fn build_output_path(
     }
 
     path
+}
+
+/// Build output path for an episode (legacy, uses default format)
+pub fn build_output_path(
+    base_directory: &str,
+    subscription_name: &str,
+    episode_title: &str,
+    pub_date: Option<DateTime<Utc>>,
+    audio_url: &str,
+) -> PathBuf {
+    // Use default format: {show}-{episode}
+    build_output_path_with_format(
+        base_directory,
+        subscription_name,
+        episode_title,
+        pub_date,
+        audio_url,
+        "{show}-{episode}",
+    )
 }
 
 /// Extract file extension from URL or MIME type

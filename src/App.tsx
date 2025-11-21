@@ -367,6 +367,8 @@ function AddSubscriptionForm({ onClose }: { onClose: () => void }) {
   const [outputDir, setOutputDir] = useState('')
   const [checkFrequency, setCheckFrequency] = useState(15)
   const [quality, setQuality] = useState<'enclosure' | 'original' | 'flac' | 'mp3'>('enclosure')
+  const [maxEpisodes, setMaxEpisodes] = useState<number | null>(null)
+  const [filenameFormat, setFilenameFormat] = useState('{show}-{episode}')
 
   const handleSelectDirectory = async () => {
     try {
@@ -389,6 +391,8 @@ function AddSubscriptionForm({ onClose }: { onClose: () => void }) {
         check_frequency_minutes: checkFrequency,
         max_items_to_check: 100,
         preferred_quality: quality,
+        max_episodes: maxEpisodes,
+        filename_format: filenameFormat,
       })
       onClose()
     } catch (error) {
@@ -475,6 +479,42 @@ function AddSubscriptionForm({ onClose }: { onClose: () => void }) {
                 {t('audioQualityDescription')}
               </p>
             </div>
+            <div>
+              <label className="text-sm font-medium">Max Episodes (optional)</label>
+              <Input
+                type="number"
+                value={maxEpisodes ?? ''}
+                onChange={(e) => setMaxEpisodes(e.target.value ? Number(e.target.value) : null)}
+                placeholder="Leave empty for no limit"
+                min="1"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Maximum number of episodes to keep. Oldest episodes will be automatically deleted.
+              </p>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Filename Format</label>
+              <select
+                value={filenameFormat}
+                onChange={(e) => setFilenameFormat(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                required
+              >
+                <option value="{show}-{episode}">Show - Episode</option>
+                <option value="{episode}">Episode only</option>
+                <option value="{episode}-{show}">Episode - Show</option>
+                <option value="{date}_{episode}">Date_Episode</option>
+              </select>
+              <Input
+                value={filenameFormat}
+                onChange={(e) => setFilenameFormat(e.target.value)}
+                placeholder="Custom: {show}, {episode}, {date}"
+                className="mt-2"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Available variables: {'{show}'}, {'{episode}'}, {'{date}'}
+              </p>
+            </div>
             <div className="flex gap-2">
               <Button type="submit" className="flex-1">
                 {t('create')}
@@ -504,6 +544,8 @@ function EditSubscriptionForm({
   const [outputDir, setOutputDir] = useState(subscription.output_directory)
   const [checkFrequency, setCheckFrequency] = useState(subscription.check_frequency_minutes)
   const [quality, setQuality] = useState<'enclosure' | 'original' | 'flac' | 'mp3'>(subscription.preferred_quality)
+  const [maxEpisodes, setMaxEpisodes] = useState<number | null>(subscription.max_episodes)
+  const [filenameFormat, setFilenameFormat] = useState(subscription.filename_format)
 
   const handleSelectDirectory = async () => {
     try {
@@ -526,6 +568,8 @@ function EditSubscriptionForm({
         check_frequency_minutes: checkFrequency,
         max_items_to_check: subscription.max_items_to_check,
         preferred_quality: quality,
+        max_episodes: maxEpisodes,
+        filename_format: filenameFormat,
       })
       onClose()
     } catch (error) {
@@ -610,6 +654,42 @@ function EditSubscriptionForm({
               </select>
               <p className="text-xs text-muted-foreground mt-1">
                 {t('audioQualityDescription')}
+              </p>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Max Episodes (optional)</label>
+              <Input
+                type="number"
+                value={maxEpisodes ?? ''}
+                onChange={(e) => setMaxEpisodes(e.target.value ? Number(e.target.value) : null)}
+                placeholder="Leave empty for no limit"
+                min="1"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Maximum number of episodes to keep. Oldest episodes will be automatically deleted.
+              </p>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Filename Format</label>
+              <select
+                value={filenameFormat}
+                onChange={(e) => setFilenameFormat(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                required
+              >
+                <option value="{show}-{episode}">Show - Episode</option>
+                <option value="{episode}">Episode only</option>
+                <option value="{episode}-{show}">Episode - Show</option>
+                <option value="{date}_{episode}">Date_Episode</option>
+              </select>
+              <Input
+                value={filenameFormat}
+                onChange={(e) => setFilenameFormat(e.target.value)}
+                placeholder="Custom: {show}, {episode}, {date}"
+                className="mt-2"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Available variables: {'{show}'}, {'{episode}'}, {'{date}'}
               </p>
             </div>
             <div className="flex gap-2">

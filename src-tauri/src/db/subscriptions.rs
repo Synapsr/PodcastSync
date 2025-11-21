@@ -16,8 +16,8 @@ pub async fn create_subscription(
         INSERT INTO subscriptions (
             name, rss_url, radio_slug, automation_name,
             check_frequency_minutes, output_directory, max_items_to_check,
-            preferred_quality, enabled, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+            preferred_quality, max_episodes, filename_format, enabled, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
         RETURNING *
         "#,
     )
@@ -29,6 +29,8 @@ pub async fn create_subscription(
     .bind(&data.output_directory)
     .bind(data.max_items_to_check)
     .bind(&data.preferred_quality)
+    .bind(data.max_episodes)
+    .bind(&data.filename_format)
     .bind(now)
     .bind(now)
     .fetch_one(pool)
@@ -79,7 +81,7 @@ pub async fn update_subscription(
         UPDATE subscriptions
         SET name = ?, rss_url = ?, radio_slug = ?, automation_name = ?,
             check_frequency_minutes = ?, output_directory = ?, max_items_to_check = ?,
-            preferred_quality = ?, updated_at = ?
+            preferred_quality = ?, max_episodes = ?, filename_format = ?, updated_at = ?
         WHERE id = ?
         "#,
     )
@@ -91,6 +93,8 @@ pub async fn update_subscription(
     .bind(&data.output_directory)
     .bind(data.max_items_to_check)
     .bind(&data.preferred_quality)
+    .bind(data.max_episodes)
+    .bind(&data.filename_format)
     .bind(now)
     .bind(id)
     .execute(pool)
@@ -229,6 +233,74 @@ pub async fn increment_download_count(pool: &SqlitePool, id: i64) -> AppResult<(
     .bind(id)
     .execute(pool)
     .await?;
+
+    Ok(())
+}
+
+/// Cleanup old episodes for a subscription if max_episodes is set
+/// Deletes the oldest episodes (both files and DB records) to stay within the limit
+pub async fn cleanup_old_episodes(pool: &SqlitePool, subscription_id: i64) -> AppResult<()> {
+    // Get subscription to check max_episodes
+    let subscription = get_subscription(pool, subscription_id).await?;
+
+    if let Some(max_episodes) = subscription.max_episodes {
+        if max_episodes <= 0 {
+            return Ok(());
+        }
+
+        // Get count of completed episodes
+        let count_result = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*) FROM episodes
+            WHERE subscription_id = ? AND download_status = 'completed'
+            "#,
+        )
+        .bind(subscription_id)
+        .fetch_one(pool)
+        .await?;
+
+        let episodes_to_delete = count_result - max_episodes as i64;
+
+        if episodes_to_delete > 0 {
+            // Get the oldest episodes to delete
+            let episodes_to_remove = sqlx::query_as::<_, (i64, Option<String>)>(
+                r#"
+                SELECT id, download_path FROM episodes
+                WHERE subscription_id = ? AND download_status = 'completed'
+                ORDER BY pub_date ASC, discovered_at ASC
+                LIMIT ?
+                "#,
+            )
+            .bind(subscription_id)
+            .bind(episodes_to_delete)
+            .fetch_all(pool)
+            .await?;
+
+            // Delete files and database records
+            for (episode_id, download_path) in episodes_to_remove {
+                // Delete file if it exists
+                if let Some(path) = download_path {
+                    if let Err(e) = tokio::fs::remove_file(&path).await {
+                        tracing::warn!("Failed to delete old episode file {}: {}", path, e);
+                    } else {
+                        tracing::info!("Deleted old episode file: {}", path);
+                    }
+                }
+
+                // Delete from database
+                sqlx::query("DELETE FROM episodes WHERE id = ?")
+                    .bind(episode_id)
+                    .execute(pool)
+                    .await?;
+            }
+
+            tracing::info!(
+                "Cleaned up {} old episodes for subscription {}",
+                episodes_to_delete,
+                subscription_id
+            );
+        }
+    }
 
     Ok(())
 }

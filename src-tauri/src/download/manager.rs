@@ -134,6 +134,9 @@ impl DownloadTask {
                     // Increment download count
                     let _ = increment_download_count(&db_pool, request.subscription_id).await;
 
+                    // Cleanup old episodes if max_episodes is set
+                    let _ = crate::db::subscriptions::cleanup_old_episodes(&db_pool, request.subscription_id).await;
+
                     // Emit completed event
                     let _ = app_handle.emit_all(
                         "download-completed",

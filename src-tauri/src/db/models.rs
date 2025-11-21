@@ -14,6 +14,8 @@ pub struct Subscription {
     pub max_items_to_check: i32,
     pub enabled: bool,
     pub preferred_quality: String,
+    pub max_episodes: Option<i32>,
+    pub filename_format: String,
     pub last_checked_at: Option<DateTime<Utc>>,
     pub last_success_at: Option<DateTime<Utc>>,
     pub last_error: Option<String>,
@@ -33,6 +35,8 @@ pub struct CreateSubscriptionData {
     pub output_directory: String,
     pub max_items_to_check: i32,
     pub preferred_quality: String,
+    pub max_episodes: Option<i32>,
+    pub filename_format: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]

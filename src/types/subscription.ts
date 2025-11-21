@@ -11,6 +11,8 @@ export interface Subscription {
   max_items_to_check: number
   enabled: boolean
   preferred_quality: QualityPreference
+  max_episodes: number | null
+  filename_format: string
   last_checked_at: string | null
   last_success_at: string | null
   last_error: string | null
@@ -29,4 +31,6 @@ export interface CreateSubscriptionData {
   output_directory: string
   max_items_to_check: number
   preferred_quality: QualityPreference
+  max_episodes: number | null
+  filename_format: string
 }

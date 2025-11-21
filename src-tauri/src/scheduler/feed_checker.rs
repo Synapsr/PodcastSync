@@ -9,7 +9,7 @@ use crate::db::queue::add_to_queue;
 use crate::db::subscriptions::{get_subscriptions_to_check, update_subscription_checked};
 use crate::download::DownloadRequest;
 use crate::rss::{fetch_rss, parse_rss_with_quality};
-use crate::utils::{build_output_path, extension_from_mime};
+use crate::utils::{build_output_path_with_format, extension_from_mime};
 
 pub async fn start_feed_checker(
     db_pool: SqlitePool,
@@ -50,6 +50,7 @@ pub async fn start_feed_checker(
                     subscription.output_directory.clone(),
                     subscription.max_items_to_check,
                     subscription.preferred_quality.clone(),
+                    subscription.filename_format.clone(),
                     db_pool_clone,
                     download_tx_clone,
                     app_handle_clone,
@@ -67,6 +68,7 @@ async fn check_subscription(
     output_directory: String,
     max_items_to_check: i32,
     preferred_quality: String,
+    filename_format: String,
     db_pool: SqlitePool,
     download_tx: mpsc::Sender<DownloadRequest>,
     app_handle: AppHandle,
@@ -184,7 +186,7 @@ async fn check_subscription(
             },
         );
 
-        // Build output path
+        // Build output path with custom filename format
         let extension = enclosure
             .mime_type
             .as_ref()
@@ -194,12 +196,13 @@ async fn check_subscription(
             })
             .unwrap_or_else(|| "mp3".to_string());
 
-        let output_path = build_output_path(
+        let output_path = build_output_path_with_format(
             &output_directory,
             &subscription_name,
             &item.title,
             item.pub_date,
             &format!("{}.{}", item.title, extension),
+            &filename_format,
         );
 
         // Add to download queue

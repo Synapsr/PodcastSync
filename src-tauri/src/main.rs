@@ -33,6 +33,14 @@ fn main() {
     // Build Tauri app
     tauri::Builder::default()
         .setup(|app| {
+            // Enable DevTools in production for debugging
+            #[cfg(not(debug_assertions))]
+            {
+                if let Some(window) = app.get_window("main") {
+                    window.open_devtools();
+                }
+            }
+
             let app_handle = app.handle();
 
             // Get app data directory

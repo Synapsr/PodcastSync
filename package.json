@@ -1,6 +1,6 @@
 {
   "name": "podcastsync",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A modern, cross-platform desktop application for automatically downloading and managing podcast episodes from RSS feeds",
   "type": "module",
   "scripts": {
