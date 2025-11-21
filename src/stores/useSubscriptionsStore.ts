@@ -18,7 +18,7 @@ interface SubscriptionsStore {
   updateLastChecked: (id: number) => void
 }
 
-export const useSubscriptionsStore = create<SubscriptionsStore>((set, get) => ({
+export const useSubscriptionsStore = create<SubscriptionsStore>((set) => ({
   subscriptions: [],
   isLoading: false,
   error: null,

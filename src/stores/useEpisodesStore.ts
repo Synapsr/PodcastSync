@@ -19,7 +19,7 @@ interface EpisodesStore {
   markEpisodeFailed: (id: number, error: string) => void
 }
 
-export const useEpisodesStore = create<EpisodesStore>((set, get) => ({
+export const useEpisodesStore = create<EpisodesStore>((set) => ({
   episodes: [],
   stats: null,
   isLoading: false,
