@@ -22,6 +22,7 @@ export const subscriptionApi = {
   toggle: (id: number, enabled: boolean) =>
     invoke<void>('toggle_subscription', { id, enabled }),
   checkNow: (id: number) => invoke<void>('check_subscription_now', { id }),
+  fetchRssTitle: (url: string) => invoke<string>('fetch_rss_title', { url }),
 }
 
 // Episode API

@@ -330,6 +330,38 @@ pub async fn cancel_subscription_episodes(pool: &SqlitePool, subscription_id: i6
     Ok(())
 }
 
+/// Count completed episodes for a subscription
+pub async fn count_completed_episodes(pool: &SqlitePool, subscription_id: i64) -> AppResult<i64> {
+    let count = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM episodes
+        WHERE subscription_id = ? AND download_status = 'completed'
+        "#,
+    )
+    .bind(subscription_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(count)
+}
+
+/// Count all episodes for a subscription (all statuses)
+pub async fn count_all_episodes(pool: &SqlitePool, subscription_id: i64) -> AppResult<i64> {
+    let count = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM episodes
+        WHERE subscription_id = ?
+        "#,
+    )
+    .bind(subscription_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(count)
+}
+
 /// Get episode statistics
 pub async fn get_episode_stats(pool: &SqlitePool) -> AppResult<EpisodeStats> {
     let stats = sqlx::query_as::<_, EpisodeStats>(

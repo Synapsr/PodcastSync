@@ -1,14 +1,16 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { fr, TranslationKey } from './fr'
 import { en } from './en'
+import { br } from './br'
 import { formatRelativeTime, getDateLocale } from '../lib/utils'
 
-type Language = 'fr' | 'en'
+type Language = 'fr' | 'en' | 'br'
 type Translations = typeof fr
 
 const translations: Record<Language, Translations> = {
   fr,
   en,
+  br,
 }
 
 interface LanguageContextType {

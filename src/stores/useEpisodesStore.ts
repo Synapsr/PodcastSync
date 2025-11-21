@@ -14,6 +14,7 @@ interface EpisodesStore {
   fetchStats: () => Promise<void>
   retryEpisode: (id: number) => Promise<void>
   deleteEpisode: (id: number) => Promise<void>
+  addEpisode: (episode: Episode) => void
   updateEpisodeProgress: (id: number, progress: number) => void
   markEpisodeCompleted: (id: number, filePath: string) => void
   markEpisodeFailed: (id: number, error: string) => void
@@ -90,6 +91,29 @@ export const useEpisodesStore = create<EpisodesStore>((set) => ({
       set({ error: String(error) })
       throw error
     }
+  },
+
+  addEpisode: (episode) => {
+    set((state) => {
+      // Check if episode already exists
+      const exists = state.episodes.some((e) => e.id === episode.id)
+      if (exists) {
+        return state // Don't add duplicates
+      }
+
+      // Add new episode to the beginning of the list
+      return {
+        episodes: [episode, ...state.episodes],
+        // Update stats if they exist
+        stats: state.stats
+          ? {
+              ...state.stats,
+              total: state.stats.total + 1,
+              pending: state.stats.pending + 1,
+            }
+          : null,
+      }
+    })
   },
 
   updateEpisodeProgress: (id, progress) => {

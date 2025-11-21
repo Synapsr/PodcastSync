@@ -38,7 +38,8 @@ export function formatRelativeTime(date: string | null, locale: Locale = enUS, n
 
 // Helper to get the correct locale based on language code
 export function getDateLocale(languageCode: string): Locale {
-  return languageCode === 'fr' ? fr : enUS
+  if (languageCode === 'fr' || languageCode === 'br') return fr
+  return enUS
 }
 
 export function formatDateTime(date: string | null): string {

@@ -150,20 +150,52 @@ fn extract_from_media_group(item: &rss::Item, quality: &str) -> Option<Enclosure
     // Get all media:content elements
     for group_elem in group {
         if let Some(contents) = group_elem.children.get("content") {
-            for content in contents {
+            for content in contents.iter() {
                 if let Some(url) = content.attrs.get("url") {
-                    // Match quality based on URL pattern
+                    let mime_type = content.attrs.get("type");
+
+                    // Extract media:title from children
+                    let media_title = content.children.get("title")
+                        .and_then(|titles| titles.first())
+                        .and_then(|title_elem| title_elem.value.as_ref())
+                        .map(|s| s.to_lowercase());
+
+                    // Match quality based on MIME type, media:title, or URL pattern
                     let matches = match quality {
-                        "original" => url.contains("-original"),
-                        "flac" => url.contains("-raw"),
-                        "mp3" => url.contains("-std"),
+                        "original" => {
+                            // Original: check media:title for "originale" or "original"
+                            // OR check MIME type for uncompressed formats (WAV, AIFF, etc.)
+                            // OR check URL pattern
+                            media_title.as_ref().map_or(false, |t| t.contains("originale") || t.contains("original"))
+                                || mime_type.map_or(false, |t| t.contains("wav") || t.contains("aiff"))
+                                || url.contains("-original")
+                        }
+                        "flac" => {
+                            // FLAC: check media:title for "brute" or MIME type for flac
+                            media_title.as_ref().map_or(false, |t| t.contains("brute"))
+                                || mime_type.map_or(false, |t| t.contains("flac"))
+                                || url.contains("-raw")
+                        }
+                        "mp3" => {
+                            // MP3: check media:title for "standard" or "optimisée" or MIME type for mpeg
+                            media_title.as_ref().map_or(false, |t| t.contains("standard") || t.contains("optimis"))
+                                || mime_type.map_or(false, |t| t.contains("mpeg") || t.contains("mp3"))
+                                || url.contains("-std")
+                        }
                         _ => false,
                     };
 
                     if matches {
+                        tracing::debug!(
+                            "Found media:content for quality '{}': url={}, type={:?}, title={:?}",
+                            quality,
+                            url,
+                            mime_type,
+                            media_title
+                        );
                         return Some(Enclosure {
                             url: url.to_string(),
-                            mime_type: content.attrs.get("type").map(|t| t.to_string()),
+                            mime_type: mime_type.map(|t| t.to_string()),
                             length: content.attrs.get("fileSize")
                                 .and_then(|l| l.parse().ok()),
                         });

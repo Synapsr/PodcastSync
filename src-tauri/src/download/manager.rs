@@ -13,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 use crate::db::episodes::{
     mark_episode_completed, mark_episode_downloading, mark_episode_failed, update_episode_progress,
 };
-use crate::db::models::{DownloadCompletedPayload, DownloadFailedPayload, DownloadProgressPayload};
+use crate::db::models::{DownloadCompletedPayload, DownloadFailedPayload, DownloadProgressPayload, DownloadStartedPayload};
 use crate::db::queue::remove_from_queue;
 use crate::db::subscriptions::increment_download_count;
 use crate::utils::AppResult;
@@ -103,6 +103,15 @@ impl DownloadTask {
                 return;
             }
 
+            // Emit started event
+            let _ = app_handle.emit_all(
+                "download-started",
+                DownloadStartedPayload {
+                    episode_id: request.episode_id,
+                    subscription_id: request.subscription_id,
+                },
+            );
+
             // Remove from queue
             let _ = remove_from_queue(&db_pool, request.episode_id).await;
 
@@ -142,6 +151,7 @@ impl DownloadTask {
                         "download-completed",
                         DownloadCompletedPayload {
                             episode_id: request.episode_id,
+                            subscription_id: request.subscription_id,
                             file_path: request.output_path.display().to_string(),
                         },
                     );

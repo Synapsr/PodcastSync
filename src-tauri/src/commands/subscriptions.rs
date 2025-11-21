@@ -1,7 +1,9 @@
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::db::models::{CreateSubscriptionData, Subscription};
 use crate::db::subscriptions;
+use crate::rss::{fetch_rss_with_limit, parse_rss_with_quality};
+use crate::scheduler::feed_checker;
 use crate::state::AppState;
 
 #[tauri::command]
@@ -61,8 +63,31 @@ pub async fn toggle_subscription(
 }
 
 #[tauri::command]
-pub async fn check_subscription_now(_state: State<'_, AppState>, _id: i64) -> Result<(), String> {
-    // Trigger immediate check by resetting last_checked_at
-    // The scheduler will pick it up on the next tick
-    Ok(())
+pub async fn check_subscription_now(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    id: i64,
+) -> Result<(), String> {
+    // Trigger immediate check of the subscription
+    feed_checker::check_single_subscription_now(
+        id,
+        state.db_pool.clone(),
+        state.download_tx.clone(),
+        app_handle,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn fetch_rss_title(url: String) -> Result<String, String> {
+    // Fetch RSS feed with limit=1 for speed
+    let xml = fetch_rss_with_limit(&url, Some(1))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Parse the feed to extract title
+    let feed = parse_rss_with_quality(&xml, "enclosure")
+        .map_err(|e| e.to_string())?;
+
+    Ok(feed.title)
 }

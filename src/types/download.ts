@@ -1,3 +1,8 @@
+export interface DownloadStartedPayload {
+  episode_id: number
+  subscription_id: number
+}
+
 export interface DownloadProgressPayload {
   episode_id: number
   downloaded: number
@@ -8,6 +13,7 @@ export interface DownloadProgressPayload {
 
 export interface DownloadCompletedPayload {
   episode_id: number
+  subscription_id: number
   file_path: string
 }
 

@@ -81,6 +81,12 @@ pub struct Setting {
 
 // Event payloads for frontend communication
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DownloadStartedPayload {
+    pub episode_id: i64,
+    pub subscription_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloadProgressPayload {
     pub episode_id: i64,
     pub downloaded: u64,
@@ -92,6 +98,7 @@ pub struct DownloadProgressPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloadCompletedPayload {
     pub episode_id: i64,
+    pub subscription_id: i64,
     pub file_path: String,
 }
 

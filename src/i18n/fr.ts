@@ -47,6 +47,16 @@ export const fr = {
   audioQualityFlac: 'Format FLAC normalisé',
   audioQualityMp3: 'Format MP3 optimisé',
   audioQualityDescription: 'La qualité choisie sera utilisée si disponible, sinon un format de fallback sera automatiquement sélectionné.',
+  maxEpisodes: 'Nombre maximum d\'épisodes (optionnel)',
+  maxEpisodesPlaceholder: 'Laisser vide pour aucune limite',
+  maxEpisodesDescription: 'Nombre maximum d\'épisodes à conserver. Les épisodes les plus anciens seront automatiquement supprimés.',
+  filenameFormat: 'Format du nom de fichier',
+  filenameFormatShowEpisode: 'Émission - Épisode',
+  filenameFormatEpisodeOnly: 'Épisode uniquement',
+  filenameFormatEpisodeShow: 'Épisode - Émission',
+  filenameFormatDateEpisode: 'Date_Épisode',
+  filenameFormatCustomPlaceholder: 'Personnalisé : {show}, {episode}, {date}',
+  filenameFormatDescription: 'Variables disponibles : {show}, {episode}, {date}',
 
   // Episodes
   episodes: 'Épisodes',

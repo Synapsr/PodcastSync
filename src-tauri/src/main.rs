@@ -113,6 +113,7 @@ fn main() {
             delete_subscription,
             toggle_subscription,
             check_subscription_now,
+            fetch_rss_title,
             // Episode commands
             list_episodes,
             list_episodes_by_subscription,

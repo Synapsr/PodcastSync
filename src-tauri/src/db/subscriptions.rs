@@ -248,11 +248,11 @@ pub async fn cleanup_old_episodes(pool: &SqlitePool, subscription_id: i64) -> Ap
             return Ok(());
         }
 
-        // Get count of completed episodes
+        // Get count of ALL episodes
         let count_result = sqlx::query_scalar::<_, i64>(
             r#"
             SELECT COUNT(*) FROM episodes
-            WHERE subscription_id = ? AND download_status = 'completed'
+            WHERE subscription_id = ?
             "#,
         )
         .bind(subscription_id)
@@ -262,12 +262,21 @@ pub async fn cleanup_old_episodes(pool: &SqlitePool, subscription_id: i64) -> Ap
         let episodes_to_delete = count_result - max_episodes as i64;
 
         if episodes_to_delete > 0 {
-            // Get the oldest episodes to delete
+            // Get the oldest episodes to delete (exclude 'downloading' to avoid deleting active downloads)
+            // Priority: failed first, then completed, then pending (by oldest date)
             let episodes_to_remove = sqlx::query_as::<_, (i64, Option<String>)>(
                 r#"
                 SELECT id, download_path FROM episodes
-                WHERE subscription_id = ? AND download_status = 'completed'
-                ORDER BY pub_date ASC, discovered_at ASC
+                WHERE subscription_id = ? AND download_status != 'downloading'
+                ORDER BY
+                    CASE download_status
+                        WHEN 'failed' THEN 1
+                        WHEN 'completed' THEN 2
+                        WHEN 'pending' THEN 3
+                        ELSE 4
+                    END,
+                    pub_date ASC,
+                    discovered_at ASC
                 LIMIT ?
                 "#,
             )

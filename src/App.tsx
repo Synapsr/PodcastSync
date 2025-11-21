@@ -7,7 +7,7 @@ import { useEpisodesStore } from './stores/useEpisodesStore'
 import { useAudioPlayerStore } from './stores/useAudioPlayerStore'
 import { formatBytes } from './lib/utils'
 import { listen } from '@tauri-apps/api/event'
-import type { DownloadProgressPayload, DownloadCompletedPayload, DownloadFailedPayload } from './types/download'
+import type { DownloadStartedPayload, DownloadProgressPayload, DownloadCompletedPayload, DownloadFailedPayload } from './types/download'
 import type { EpisodeDiscoveredPayload, SubscriptionCheckedPayload } from './types/events'
 import type { Subscription } from './types/subscription'
 import { Plus, RefreshCw, Trash2, FolderOpen, Pencil, ArrowLeft, Download, CheckCircle, Clock, XCircle, Play, MoreVertical, FolderIcon, Pause, Info } from 'lucide-react'
@@ -39,7 +39,7 @@ function App() {
     updateLastChecked,
   } = useSubscriptionsStore()
 
-  const { episodes, fetchEpisodes, updateEpisodeProgress, markEpisodeCompleted, markEpisodeFailed } = useEpisodesStore()
+  const { episodes, fetchEpisodes, addEpisode, updateEpisodeProgress, markEpisodeCompleted, markEpisodeFailed } = useEpisodesStore()
 
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingSubscription, setEditingSubscription] = useState<Subscription | null>(null)
@@ -56,17 +56,19 @@ function App() {
     })
 
     // Listen for download events
+    const unsubscribeStarted = listen<DownloadStartedPayload>('download-started', (event) => {
+      // Mark episode as downloading in the UI
+      updateEpisodeProgress(event.payload.episode_id, 0)
+    })
+
     const unsubscribeProgress = listen<DownloadProgressPayload>('download-progress', (event) => {
       updateEpisodeProgress(event.payload.episode_id, event.payload.progress)
     })
 
     const unsubscribeCompleted = listen<DownloadCompletedPayload>('download-completed', (event) => {
       markEpisodeCompleted(event.payload.episode_id, event.payload.file_path)
-      // Find the episode to get subscription_id
-      const episode = episodes.find((e) => e.id === event.payload.episode_id)
-      if (episode) {
-        incrementDownloadCount(episode.subscription_id)
-      }
+      // Use subscription_id from payload (no stale closure)
+      incrementDownloadCount(event.payload.subscription_id)
     })
 
     const unsubscribeFailed = listen<DownloadFailedPayload>('download-failed', (event) => {
@@ -75,6 +77,9 @@ function App() {
 
     // Listen for episode discovered events
     const unsubscribeDiscovered = listen<EpisodeDiscoveredPayload>('episode-discovered', (event) => {
+      // Add the discovered episode to the episodes store in real-time
+      addEpisode(event.payload.episode)
+      // Increment the episode count for the subscription
       incrementEpisodeCount(event.payload.subscription_id)
     })
 
@@ -84,6 +89,7 @@ function App() {
     })
 
     return () => {
+      unsubscribeStarted.then((fn) => fn())
       unsubscribeProgress.then((fn) => fn())
       unsubscribeCompleted.then((fn) => fn())
       unsubscribeFailed.then((fn) => fn())
@@ -361,14 +367,44 @@ function App() {
 
 function AddSubscriptionForm({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation()
-  const { createSubscription } = useSubscriptionsStore()
+  const { createSubscription, subscriptions } = useSubscriptionsStore()
   const [name, setName] = useState('')
   const [rssUrl, setRssUrl] = useState('')
   const [outputDir, setOutputDir] = useState('')
   const [checkFrequency, setCheckFrequency] = useState(15)
   const [quality, setQuality] = useState<'enclosure' | 'original' | 'flac' | 'mp3'>('enclosure')
-  const [maxEpisodes, setMaxEpisodes] = useState<number | null>(null)
-  const [filenameFormat, setFilenameFormat] = useState('{show}-{episode}')
+  const [maxEpisodes, setMaxEpisodes] = useState<number | null>(15)
+  const [filenameFormat, setFilenameFormat] = useState('{show} - {episode}')
+  const [isFetchingTitle, setIsFetchingTitle] = useState(false)
+
+  // Pre-fill output directory from last subscription
+  useEffect(() => {
+    if (subscriptions.length > 0 && !outputDir) {
+      const lastSubscription = subscriptions[subscriptions.length - 1]
+      setOutputDir(lastSubscription.output_directory)
+    }
+  }, [subscriptions])
+
+  // Auto-fetch RSS title when URL is entered (with debouncing)
+  useEffect(() => {
+    if (!rssUrl || rssUrl.length < 10) return
+
+    const timer = setTimeout(async () => {
+      if (!name) { // Only auto-fill if name is empty
+        setIsFetchingTitle(true)
+        try {
+          const title = await subscriptionApi.fetchRssTitle(rssUrl)
+          setName(title)
+        } catch (error) {
+          console.error('Failed to fetch RSS title:', error)
+        } finally {
+          setIsFetchingTitle(false)
+        }
+      }
+    }, 1000) // 1 second debounce
+
+    return () => clearTimeout(timer)
+  }, [rssUrl, name])
 
   const handleSelectDirectory = async () => {
     try {
@@ -401,8 +437,8 @@ function AddSubscriptionForm({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+      <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto">
         <CardHeader>
           <CardTitle>{t('addSubscription')}</CardTitle>
           <CardDescription>{t('addSubscriptionDescription')}</CardDescription>
@@ -410,21 +446,26 @@ function AddSubscriptionForm({ onClose }: { onClose: () => void }) {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="text-sm font-medium">{t('subscriptionName')}</label>
-              <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={t('subscriptionNamePlaceholder')}
-                required
-              />
-            </div>
-            <div>
               <label className="text-sm font-medium">{t('rssUrl')}</label>
               <Input
                 value={rssUrl}
                 onChange={(e) => setRssUrl(e.target.value)}
                 placeholder={t('rssUrlPlaceholder')}
                 type="url"
+                required
+              />
+              {isFetchingTitle && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Fetching RSS title...
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="text-sm font-medium">{t('subscriptionName')}</label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={t('subscriptionNamePlaceholder')}
                 required
               />
             </div>
@@ -480,39 +521,39 @@ function AddSubscriptionForm({ onClose }: { onClose: () => void }) {
               </p>
             </div>
             <div>
-              <label className="text-sm font-medium">Max Episodes (optional)</label>
+              <label className="text-sm font-medium">{t('maxEpisodes')}</label>
               <Input
                 type="number"
                 value={maxEpisodes ?? ''}
                 onChange={(e) => setMaxEpisodes(e.target.value ? Number(e.target.value) : null)}
-                placeholder="Leave empty for no limit"
+                placeholder={t('maxEpisodesPlaceholder')}
                 min="1"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Maximum number of episodes to keep. Oldest episodes will be automatically deleted.
+                {t('maxEpisodesDescription')}
               </p>
             </div>
             <div>
-              <label className="text-sm font-medium">Filename Format</label>
+              <label className="text-sm font-medium">{t('filenameFormat')}</label>
               <select
                 value={filenameFormat}
                 onChange={(e) => setFilenameFormat(e.target.value)}
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 required
               >
-                <option value="{show}-{episode}">Show - Episode</option>
-                <option value="{episode}">Episode only</option>
-                <option value="{episode}-{show}">Episode - Show</option>
-                <option value="{date}_{episode}">Date_Episode</option>
+                <option value="{show} - {episode}">{t('filenameFormatShowEpisode')}</option>
+                <option value="{episode}">{t('filenameFormatEpisodeOnly')}</option>
+                <option value="{episode} - {show}">{t('filenameFormatEpisodeShow')}</option>
+                <option value="{date}_{episode}">{t('filenameFormatDateEpisode')}</option>
               </select>
               <Input
                 value={filenameFormat}
                 onChange={(e) => setFilenameFormat(e.target.value)}
-                placeholder="Custom: {show}, {episode}, {date}"
+                placeholder={t('filenameFormatCustomPlaceholder')}
                 className="mt-2"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Available variables: {'{show}'}, {'{episode}'}, {'{date}'}
+                {t('filenameFormatDescription')}
               </p>
             </div>
             <div className="flex gap-2">
@@ -578,8 +619,8 @@ function EditSubscriptionForm({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+      <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto">
         <CardHeader>
           <CardTitle>{t('editSubscription')}</CardTitle>
           <CardDescription>{t('editSubscriptionDescription')}</CardDescription>
@@ -657,39 +698,39 @@ function EditSubscriptionForm({
               </p>
             </div>
             <div>
-              <label className="text-sm font-medium">Max Episodes (optional)</label>
+              <label className="text-sm font-medium">{t('maxEpisodes')}</label>
               <Input
                 type="number"
                 value={maxEpisodes ?? ''}
                 onChange={(e) => setMaxEpisodes(e.target.value ? Number(e.target.value) : null)}
-                placeholder="Leave empty for no limit"
+                placeholder={t('maxEpisodesPlaceholder')}
                 min="1"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Maximum number of episodes to keep. Oldest episodes will be automatically deleted.
+                {t('maxEpisodesDescription')}
               </p>
             </div>
             <div>
-              <label className="text-sm font-medium">Filename Format</label>
+              <label className="text-sm font-medium">{t('filenameFormat')}</label>
               <select
                 value={filenameFormat}
                 onChange={(e) => setFilenameFormat(e.target.value)}
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 required
               >
-                <option value="{show}-{episode}">Show - Episode</option>
-                <option value="{episode}">Episode only</option>
-                <option value="{episode}-{show}">Episode - Show</option>
-                <option value="{date}_{episode}">Date_Episode</option>
+                <option value="{show} - {episode}">{t('filenameFormatShowEpisode')}</option>
+                <option value="{episode}">{t('filenameFormatEpisodeOnly')}</option>
+                <option value="{episode} - {show}">{t('filenameFormatEpisodeShow')}</option>
+                <option value="{date}_{episode}">{t('filenameFormatDateEpisode')}</option>
               </select>
               <Input
                 value={filenameFormat}
                 onChange={(e) => setFilenameFormat(e.target.value)}
-                placeholder="Custom: {show}, {episode}, {date}"
+                placeholder={t('filenameFormatCustomPlaceholder')}
                 className="mt-2"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Available variables: {'{show}'}, {'{episode}'}, {'{date}'}
+                {t('filenameFormatDescription')}
               </p>
             </div>
             <div className="flex gap-2">

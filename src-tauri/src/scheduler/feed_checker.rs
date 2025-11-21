@@ -3,13 +3,48 @@ use tauri::{AppHandle, Manager};
 use tokio::sync::mpsc;
 use tokio::time::{interval, Duration};
 
-use crate::db::episodes::{episode_exists, insert_episode};
+use crate::db::episodes::{count_all_episodes, episode_exists, insert_episode};
 use crate::db::models::{EpisodeDiscoveredPayload, SubscriptionCheckedPayload};
 use crate::db::queue::add_to_queue;
-use crate::db::subscriptions::{get_subscriptions_to_check, update_subscription_checked};
+use crate::db::subscriptions::{get_subscription, get_subscriptions_to_check, update_subscription_checked};
 use crate::download::DownloadRequest;
 use crate::rss::{fetch_rss, parse_rss_with_quality};
 use crate::utils::{build_output_path_with_format, extension_from_mime};
+
+/// Check a single subscription immediately (called from commands)
+pub async fn check_single_subscription_now(
+    subscription_id: i64,
+    db_pool: SqlitePool,
+    download_tx: mpsc::Sender<DownloadRequest>,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    // Get subscription details
+    let subscription = get_subscription(&db_pool, subscription_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    tracing::info!("Manual check triggered for subscription: {}", subscription.name);
+
+    // Spawn task to check subscription
+    tokio::spawn(async move {
+        check_subscription(
+            subscription.id,
+            subscription.name,
+            subscription.rss_url,
+            subscription.output_directory,
+            subscription.max_items_to_check,
+            subscription.max_episodes,
+            subscription.preferred_quality,
+            subscription.filename_format,
+            db_pool,
+            download_tx,
+            app_handle,
+        )
+        .await;
+    });
+
+    Ok(())
+}
 
 pub async fn start_feed_checker(
     db_pool: SqlitePool,
@@ -49,6 +84,7 @@ pub async fn start_feed_checker(
                     subscription.rss_url.clone(),
                     subscription.output_directory.clone(),
                     subscription.max_items_to_check,
+                    subscription.max_episodes,
                     subscription.preferred_quality.clone(),
                     subscription.filename_format.clone(),
                     db_pool_clone,
@@ -67,6 +103,7 @@ async fn check_subscription(
     rss_url: String,
     output_directory: String,
     max_items_to_check: i32,
+    max_episodes: Option<i32>,
     preferred_quality: String,
     filename_format: String,
     db_pool: SqlitePool,
@@ -120,7 +157,41 @@ async fn check_subscription(
 
     let mut new_episodes_count = 0;
 
-    // Process items (limited by max_items_to_check)
+    // Calculate available download slots based on max_episodes limit
+    let available_slots = if let Some(max_eps) = max_episodes {
+        let current_total = match count_all_episodes(&db_pool, subscription_id).await {
+            Ok(count) => count,
+            Err(e) => {
+                tracing::error!("Failed to count episodes: {}", e);
+                0
+            }
+        };
+
+        let slots = max_eps as i64 - current_total;
+        if slots <= 0 {
+            tracing::info!(
+                "Subscription {} has reached max episodes limit ({}/{}). No new downloads will be queued.",
+                subscription_name,
+                current_total,
+                max_eps
+            );
+            0
+        } else {
+            tracing::info!(
+                "Subscription {} has {} available slots ({} episodes, limit {})",
+                subscription_name,
+                slots,
+                current_total,
+                max_eps
+            );
+            slots as usize
+        }
+    } else {
+        usize::MAX // No limit
+    };
+
+    // First pass: collect all new episodes
+    let mut new_items = Vec::new();
     for item in feed
         .items
         .into_iter()
@@ -135,9 +206,38 @@ async fn check_subscription(
             }
         };
 
-        if exists {
-            continue;
+        if !exists {
+            new_items.push(item);
         }
+    }
+
+    // Sort by pub_date DESC (most recent first), items without date go last
+    new_items.sort_by(|a, b| {
+        match (&b.pub_date, &a.pub_date) {
+            (Some(date_b), Some(date_a)) => date_b.cmp(date_a),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        }
+    });
+
+    // Take only available_slots episodes
+    let items_to_process: Vec<_> = new_items.into_iter().take(available_slots).collect();
+
+    if available_slots > 0 && items_to_process.is_empty() {
+        tracing::info!("No new episodes found for subscription {}", subscription_name);
+    } else if available_slots == 0 && items_to_process.is_empty() {
+        // Already logged above
+    } else {
+        tracing::info!(
+            "Processing {} new episode(s) for subscription {}",
+            items_to_process.len(),
+            subscription_name
+        );
+    }
+
+    // Second pass: process selected episodes
+    for item in items_to_process {
 
         // Extract enclosure (audio URL)
         let Some(enclosure) = item.enclosure else {
